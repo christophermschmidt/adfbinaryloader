@@ -1,0 +1,288 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "factoryName": {
+            "type": "string",
+            "metadata": "Data Factory name",
+            "defaultValue": "adfbinaryloader"
+        },
+        "LSblobStorage_connectionString": {
+            "type": "secureString",
+            "metadata": "Secure string for 'connectionString' of 'LSblobStorage'"
+        },
+        "VMfsFileImporterFolder_password": {
+            "type": "secureString",
+            "metadata": "Secure string for 'password' of 'VMfsFileImporterFolder'"
+        },
+        "VMfsFileImporterFolder_properties_typeProperties_host": {
+            "type": "string",
+            "defaultValue": "C:\\AzureUploads"
+        },
+        "VMfsFileImporterFolder_properties_typeProperties_userId": {
+            "type": "string",
+            "defaultValue": "demouser"
+        }
+    },
+    "variables": {
+        "factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+    },
+    "resources": [
+        {
+            "name": "[concat(parameters('factoryName'), '/LSblobStorage')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "description": "linked service to the blob storage account",
+                "annotations": [],
+                "type": "AzureBlobStorage",
+                "typeProperties": {
+                    "connectionString": "[parameters('LSblobStorage_connectionString')]"
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/sampleloaderir')]",
+            "type": "Microsoft.DataFactory/factories/integrationRuntimes",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "type": "SelfHosted",
+                "description": "IR for the sample loader from an on-prem network share",
+                "typeProperties": {}
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/DSblobStorage')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "LSblobStorage",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "fileName": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "type": "Binary",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "folderPath": {
+                            "value": "@concat(formatDateTime(utcnow(),'yyyy'),'/',formatDateTime(utcnow(),'MM'),'/',formatDateTime(utcnow(),'dd'))",
+                            "type": "Expression"
+                        },
+                        "container": "raw/onpremfileshare"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/LSblobStorage')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/VMfsFileImporterFolder')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "FileServer",
+                "typeProperties": {
+                    "host": "[parameters('VMfsFileImporterFolder_properties_typeProperties_host')]",
+                    "userId": "[parameters('VMfsFileImporterFolder_properties_typeProperties_userId')]",
+                    "password": {
+                        "type": "SecureString",
+                        "value": "[parameters('VMfsFileImporterFolder_password')]"
+                    }
+                },
+                "connectVia": {
+                    "referenceName": "sampleloaderir",
+                    "type": "IntegrationRuntimeReference"
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/integrationRuntimes/sampleloaderir')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/fsOnPremFileImporterFileName')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "VMfsFileImporterFolder",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "fileName": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "type": "Binary",
+                "typeProperties": {
+                    "location": {
+                        "type": "FileServerLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        }
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/VMfsFileImporterFolder')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/fsOnPremFileImporterFolder')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "VMfsFileImporterFolder",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Binary",
+                "typeProperties": {
+                    "location": {
+                        "type": "FileServerLocation"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/VMfsFileImporterFolder')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/pipeGenericFileMover')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "Meta OnPremFolderMonitor",
+                        "type": "GetMetadata",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "dataset": {
+                                "referenceName": "fsOnPremFileImporterFolder",
+                                "type": "DatasetReference",
+                                "parameters": {}
+                            },
+                            "fieldList": [
+                                "childItems"
+                            ],
+                            "storeSettings": {
+                                "type": "FileServerReadSettings",
+                                "recursive": true,
+                                "enablePartitionDiscovery": false
+                            },
+                            "formatSettings": {
+                                "type": "BinaryReadSettings"
+                            }
+                        }
+                    },
+                    {
+                        "name": "feForEachFileFound",
+                        "type": "ForEach",
+                        "dependsOn": [
+                            {
+                                "activity": "Meta OnPremFolderMonitor",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('Meta OnPremFolderMonitor').output.childItems",
+                                "type": "Expression"
+                            },
+                            "activities": [
+                                {
+                                    "name": "copyOnPremFilesToAzureStorageBlob",
+                                    "type": "Copy",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "timeout": "7.00:00:00",
+                                        "retry": 0,
+                                        "retryIntervalInSeconds": 30,
+                                        "secureOutput": false,
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "source": {
+                                            "type": "BinarySource",
+                                            "storeSettings": {
+                                                "type": "FileServerReadSettings",
+                                                "recursive": true
+                                            },
+                                            "formatSettings": {
+                                                "type": "BinaryReadSettings"
+                                            }
+                                        },
+                                        "sink": {
+                                            "type": "BinarySink",
+                                            "storeSettings": {
+                                                "type": "AzureBlobStorageWriteSettings"
+                                            }
+                                        },
+                                        "enableStaging": false
+                                    },
+                                    "inputs": [
+                                        {
+                                            "referenceName": "fsOnPremFileImporterFileName",
+                                            "type": "DatasetReference",
+                                            "parameters": {
+                                                "fileName": "@item().name"
+                                            }
+                                        }
+                                    ],
+                                    "outputs": [
+                                        {
+                                            "referenceName": "DSblobStorage",
+                                            "type": "DatasetReference",
+                                            "parameters": {
+                                                "fileName": {
+                                                    "value": "@item().name",
+                                                    "type": "Expression"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "annotations": [],
+                "lastPublishTime": "2021-03-17T14:26:27Z"
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/fsOnPremFileImporterFolder')]",
+                "[concat(variables('factoryId'), '/datasets/fsOnPremFileImporterFileName')]",
+                "[concat(variables('factoryId'), '/datasets/DSblobStorage')]"
+            ]
+        }
+    ]
+}

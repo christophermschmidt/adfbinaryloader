@@ -1,7 +1,0 @@
-{
-	"name": "sampleloaderir",
-	"properties": {
-		"type": "SelfHosted",
-		"description": "IR for the sample loader from an on-prem network share"
-	}
-}
